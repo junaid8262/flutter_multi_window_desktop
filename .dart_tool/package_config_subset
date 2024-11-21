@@ -90,10 +90,6 @@ vm_service
 3.3
 file:///C:/Users/junai/AppData/Local/Pub/Cache/hosted/pub.dev/vm_service-14.2.4/
 file:///C:/Users/junai/AppData/Local/Pub/Cache/hosted/pub.dev/vm_service-14.2.4/lib/
-desktop_multi_window
-2.17
-file:///C:/Users/junai/Downloads/Desktop%20mulitple%20windows%20package/
-file:///C:/Users/junai/Downloads/Desktop%20mulitple%20windows%20package/lib/
 sky_engine
 3.2
 file:///C:/src/flutter/bin/cache/pkg/sky_engine/
@@ -106,4 +102,8 @@ flutter_test
 3.3
 file:///C:/src/flutter/packages/flutter_test/
 file:///C:/src/flutter/packages/flutter_test/lib/
+desktop_multi_window
+2.17
+file:///D:/Flutter%20Projects/flutter_multi_window_desktop/
+file:///D:/Flutter%20Projects/flutter_multi_window_desktop/lib/
 2

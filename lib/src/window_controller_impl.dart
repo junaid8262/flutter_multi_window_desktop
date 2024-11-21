@@ -1,16 +1,19 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
-
 import 'package:flutter/services.dart';
-
 import 'channels.dart';
+import 'request_queue.dart';
 import 'window_controller.dart';
 
 class WindowControllerMainImpl extends WindowController {
   final MethodChannel _channel = multiWindowChannel;
 
-  // the id of this window
+  // The ID of this window
   final int _id;
+
+  // Request queue for rate-limited operations
+  static final RequestQueue _requestQueue = RequestQueue();
 
   WindowControllerMainImpl(this._id);
 
@@ -18,51 +21,57 @@ class WindowControllerMainImpl extends WindowController {
   int get windowId => _id;
 
   @override
-  Future<void> close() {
-    return _channel.invokeMethod('close', _id);
+  Future<void> close() async {
+    await _enqueueRequest(() => _channel.invokeMethod('close', _id), priority: 0);
   }
 
   @override
-  Future<void> hide() {
-    return _channel.invokeMethod('hide', _id);
+  Future<void> hide() async {
+    await _enqueueRequest(() => _channel.invokeMethod('hide', _id), priority: 1);
   }
 
   @override
-  Future<void> show() {
-    return _channel.invokeMethod('show', _id);
+  Future<void> show() async {
+    await _enqueueRequest(() => _channel.invokeMethod('show', _id), priority: 0);
   }
 
   @override
-  Future<void> center() {
-    return _channel.invokeMethod('center', _id);
+  Future<void> center() async {
+    await _enqueueRequest(() => _channel.invokeMethod('center', _id), priority: 1);
   }
 
   @override
-  Future<void> setFrame(Rect frame) {
-    return _channel.invokeMethod('setFrame', <String, dynamic>{
-      'windowId': _id,
-      'left': frame.left,
-      'top': frame.top,
-      'width': frame.width,
-      'height': frame.height,
-    });
-  }
-
-  @override
-  Future<void> setTitle(String title) {
-    return _channel.invokeMethod('setTitle', <String, dynamic>{
-      'windowId': _id,
-      'title': title,
-    });
-  }
-
-  @override
-  Future<void> resizable(bool resizable) {
-    if (Platform.isMacOS) {
-      return _channel.invokeMethod('resizable', <String, dynamic>{
+  Future<void> setFrame(Rect frame) async {
+    await _enqueueRequest(() {
+      return _channel.invokeMethod('setFrame', <String, dynamic>{
         'windowId': _id,
-        'resizable': resizable,
+        'left': frame.left,
+        'top': frame.top,
+        'width': frame.width,
+        'height': frame.height,
       });
+    }, priority: 1);
+  }
+
+  @override
+  Future<void> setTitle(String title) async {
+    await _enqueueRequest(() {
+      return _channel.invokeMethod('setTitle', <String, dynamic>{
+        'windowId': _id,
+        'title': title,
+      });
+    }, priority: 1);
+  }
+
+  @override
+  Future<void> resizable(bool resizable) async {
+    if (Platform.isMacOS) {
+      await _enqueueRequest(() {
+        return _channel.invokeMethod('resizable', <String, dynamic>{
+          'windowId': _id,
+          'resizable': resizable,
+        });
+      }, priority: 1);
     } else {
       throw MissingPluginException(
         'This functionality is only available on macOS',
@@ -71,10 +80,28 @@ class WindowControllerMainImpl extends WindowController {
   }
 
   @override
-  Future<void> setFrameAutosaveName(String name) {
-    return _channel.invokeMethod('setFrameAutosaveName', <String, dynamic>{
-      'windowId': _id,
-      'name': name,
-    });
+  Future<void> setFrameAutosaveName(String name) async {
+    await _enqueueRequest(() {
+      return _channel.invokeMethod('setFrameAutosaveName', <String, dynamic>{
+        'windowId': _id,
+        'name': name,
+      });
+    }, priority: 1);
+  }
+
+  /// Helper method to enqueue requests into the rate-limited queue
+  Future<void> _enqueueRequest(Future<dynamic> Function() request, {int priority = 1}) async {
+    final completer = Completer<void>();
+
+    _requestQueue.addRequest(() async {
+      try {
+        await request();
+        completer.complete();
+      } catch (e) {
+        completer.completeError(e);
+      }
+    }, priority: priority);
+
+    return completer.future;
   }
 }

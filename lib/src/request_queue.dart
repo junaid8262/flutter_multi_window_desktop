@@ -1,29 +1,37 @@
 import 'dart:async';
+import 'package:collection/collection.dart';
 
 class RequestQueue {
-  final _queue = <_Request>[];
-  final int _rateLimit; // Maximum requests per second
+  final _queue = HeapPriorityQueue<_Request>((a, b) => a.priority.compareTo(b.priority));
+  final int _baseRateLimit;
+  int _dynamicRateLimit;
   Timer? _timer;
   bool _isProcessing = false;
 
-  RequestQueue({int rateLimit = 5}) : _rateLimit = rateLimit;
+  RequestQueue({int baseRateLimit = 5, int initialWindows = 1})
+      : _baseRateLimit = baseRateLimit,
+        _dynamicRateLimit = baseRateLimit ~/ initialWindows;
 
-  void addRequest(Future<dynamic> Function() request) {
+  void updateRateLimit(int activeWindows) {
+    _dynamicRateLimit = (activeWindows > 0) ? _baseRateLimit ~/ activeWindows : _baseRateLimit;
+  }
+
+  void addRequest(Future<dynamic> Function() request, {int priority = 0}) {
     final completer = Completer();
-    _queue.add(_Request(request, completer));
+    _queue.add(_Request(request, completer, priority));
 
     if (!_isProcessing) {
       _processQueue();
     }
   }
 
-  Future<dynamic> _processQueue() async {
+  Future<void> _processQueue() async {
     _isProcessing = true;
     _timer = Timer.periodic(Duration(seconds: 1), (timer) async {
       int processedRequests = 0;
 
-      while (_queue.isNotEmpty && processedRequests < _rateLimit) {
-        final request = _queue.removeAt(0);
+      while (_queue.isNotEmpty && processedRequests < _dynamicRateLimit) {
+        final request = _queue.removeFirst();
         try {
           final result = await request.call();
           request.completer.complete(result);
@@ -32,7 +40,7 @@ class RequestQueue {
             request.retryCount++;
             final delay = Duration(milliseconds: 500 * (1 << request.retryCount));
             await Future.delayed(delay);
-            _queue.add(request); // Requeue with backoff delay
+            _queue.add(request);
           } else {
             request.completer.completeError(e);
           }
@@ -48,17 +56,12 @@ class RequestQueue {
   }
 }
 
-/*class _Request {
-  final Future<dynamic> Function() call;
-  final Completer completer;
-
-  _Request(this.call, this.completer);
-}*/
 class _Request {
   final Future<dynamic> Function() call;
   final Completer completer;
+  final int priority;
   int retryCount = 0;
   final int maxRetries = 3;
 
-  _Request(this.call, this.completer);
+  _Request(this.call, this.completer, this.priority);
 }
