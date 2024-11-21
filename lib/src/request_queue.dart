@@ -6,7 +6,7 @@ class RequestQueue {
   Timer? _timer;
   bool _isProcessing = false;
 
-  RequestQueue({int rateLimit = 5}) : _rateLimit = rateLimit;
+  RequestQueue({int rateLimit = 2}) : _rateLimit = rateLimit;
 
   void addRequest(Future<dynamic> Function() request) {
     final completer = Completer();
