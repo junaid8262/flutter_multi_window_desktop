@@ -28,9 +28,22 @@ class WindowControllerMainImpl extends WindowController {
   }
 
   @override
-  Future<void> show() {
-    return _channel.invokeMethod('show', _id);
+  Future<void> show([int delayTime = 3]) {
+    return _channel.invokeMethod('show', _id).then((value) {
+      // Adding a delay of 2 seconds (2000 milliseconds) before executing the loop
+      Future.delayed(Duration(seconds: delayTime), () {
+        for (int i = _id - 1; i > 0; i--) {
+          Future.delayed(Duration(seconds: i), ()
+          {
+            WindowController.fromWindowId(i).show(delayTime);
+          });
+        }
+      });
+    }).catchError((e) {
+      print('Error: $e');
+    });
   }
+
 
   @override
   Future<void> center() {

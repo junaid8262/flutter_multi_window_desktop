@@ -21,8 +21,10 @@ abstract class WindowController {
   /// Close the window.
   Future<void> close();
 
+
+
   /// Show the window.
-  Future<void> show();
+  Future<void> show([int delayTime = 3]);
 
   /// Hide the window.
   Future<void> hide();

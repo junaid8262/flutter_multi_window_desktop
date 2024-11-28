@@ -9,7 +9,7 @@ import 'src/request_queue.dart';
 export 'src/window_controller.dart';
 
 class DesktopMultiWindow {
-  static final RequestQueue _requestQueue = RequestQueue(rateLimit: 5);
+  static final RequestQueue _requestQueue = RequestQueue(rateLimit: 2);
 
   /// Create a new Window.
   ///
@@ -29,13 +29,23 @@ class DesktopMultiWindow {
   /// NOTE: [createWindow] will only create a new window, you need to call
   /// [WindowController.show] to show the window.
   static Future<WindowController> createWindow([String? arguments]) async {
+
     final windowId = await multiWindowChannel.invokeMethod<int>(
       'createWindow',
       arguments,
     );
+
+
+    for (int i = windowId!-1 ; i > 0 ; i--  )
+      {
+        print ("window id is $i");
+        WindowController.fromWindowId(i).hide();
+      }
     assert(windowId != null, 'windowId is null');
     assert(windowId! > 0, 'id must be greater than 0');
     return WindowControllerMainImpl(windowId!);
+
+
   }
 
   /// Invoke method on the isolate of the window.
