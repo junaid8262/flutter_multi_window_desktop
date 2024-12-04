@@ -1,64 +1,75 @@
 import 'dart:async';
+import 'dart:collection';
 
+/// A class to manage and rate-limit method channel requests.
 class RequestQueue {
-  final _queue = <_Request>[];
   final int _rateLimit; // Maximum requests per second
+  final Queue<_Request> _queue = Queue<_Request>();
   Timer? _timer;
   bool _isProcessing = false;
 
-  RequestQueue({int rateLimit = 2}) : _rateLimit = rateLimit;
+  /// Creates a [RequestQueue] with a specified [rateLimit].
+  ///
+  /// [rateLimit]: The maximum number of requests processed per second.
+  RequestQueue({int rateLimit = 5}) : _rateLimit = rateLimit;
 
-  void addRequest(Future<dynamic> Function() request) {
-    final completer = Completer();
+  /// Adds a new request to the queue.
+  ///
+  /// [request]: A function that returns a [Future] representing the method channel call.
+  Future<dynamic> addRequest(Future<dynamic> Function() request) {
+    final completer = Completer<dynamic>();
     _queue.add(_Request(request, completer));
 
+    // Start processing if not already
     if (!_isProcessing) {
       _processQueue();
     }
+
+    return completer.future;
   }
 
-  Future<dynamic> _processQueue() async {
+  /// Processes the request queue based on the rate limit.
+  void _processQueue() {
     _isProcessing = true;
-    _timer = Timer.periodic(Duration(seconds: 1), (timer) async {
-      int processedRequests = 0;
+    final interval = Duration(milliseconds: 1000 ~/ _rateLimit);
 
-      while (_queue.isNotEmpty && processedRequests < _rateLimit) {
-        final request = _queue.removeAt(0);
-        try {
-          final result = await request.call();
-          request.completer.complete(result);
-        } catch (e) {
-          if (request.retryCount < request.maxRetries) {
-            request.retryCount++;
-            final delay = Duration(milliseconds: 500 * (1 << request.retryCount));
-            await Future.delayed(delay);
-            _queue.add(request); // Requeue with backoff delay
-          } else {
-            request.completer.completeError(e);
-          }
-        }
-        processedRequests++;
+    _timer = Timer.periodic(interval, (timer) async {
+      if (_queue.isEmpty) {
+        _stopProcessing();
+        return;
       }
 
-      if (_queue.isEmpty) {
-        _isProcessing = false;
-        _timer?.cancel();
+      final currentRequest = _queue.removeFirst();
+      try {
+        final result = await currentRequest.call();
+        currentRequest.completer.complete(result);
+      } catch (e) {
+        if (currentRequest.retryCount < currentRequest.maxRetries) {
+          currentRequest.retryCount++;
+          final delay = Duration(milliseconds: 500 * (1 << currentRequest.retryCount));
+          Timer(delay, () {
+            _queue.add(currentRequest); // Requeue with exponential backoff
+          });
+        } else {
+          currentRequest.completer.completeError(e);
+        }
       }
     });
   }
+
+  void _stopProcessing() {
+    _isProcessing = false;
+    _timer?.cancel();
+    _timer = null;
+  }
 }
 
-/*class _Request {
-  final Future<dynamic> Function() call;
-  final Completer completer;
-
-  _Request(this.call, this.completer);
-}*/
+/// Represents a single request in the [RequestQueue].
 class _Request {
   final Future<dynamic> Function() call;
-  final Completer completer;
+  final Completer<dynamic> completer;
   int retryCount = 0;
-  final int maxRetries = 3;
+  final int maxRetries;
 
-  _Request(this.call, this.completer);
+  _Request(this.call, this.completer, {this.maxRetries = 3});
 }
