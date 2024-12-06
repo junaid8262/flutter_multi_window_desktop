@@ -1,67 +1,97 @@
-import 'dart:async';
-import 'package:collection/collection.dart';
+// src/request_queue.dart
 
+import 'dart:async';
+import 'dart:collection';
+import 'dart:developer';
+
+/// A class to manage and rate-limit method channel requests.
 class RequestQueue {
-  final _queue = HeapPriorityQueue<_Request>((a, b) => a.priority.compareTo(b.priority));
-  final int _baseRateLimit;
-  int _dynamicRateLimit;
+  final int _rateLimit; // Maximum requests per second
+  final Queue<_Request> _queue = Queue<_Request>();
   Timer? _timer;
   bool _isProcessing = false;
 
-  RequestQueue({int baseRateLimit = 5, int initialWindows = 1})
-      : _baseRateLimit = baseRateLimit,
-        _dynamicRateLimit = baseRateLimit ~/ initialWindows;
+  /// Creates a [RequestQueue] with a specified [rateLimit].
+  ///
+  /// [rateLimit]: The maximum number of requests processed per second.
+  RequestQueue({int rateLimit = 5}) : _rateLimit = rateLimit;
 
-  void updateRateLimit(int activeWindows) {
-    _dynamicRateLimit = (activeWindows > 0) ? _baseRateLimit ~/ activeWindows : _baseRateLimit;
-  }
+  /// Adds a new request to the queue.
+  ///
+  /// [request]: A function that returns a [Future] representing the method channel call.
+  Future<dynamic> addRequest(Future<dynamic> Function() request) {
+    final completer = Completer<dynamic>();
+    _queue.add(_Request(request, completer));
+    log('Request added. Queue length: ${_queue.length}');
 
-  void addRequest(Future<dynamic> Function() request, {int priority = 0}) {
-    final completer = Completer();
-    _queue.add(_Request(request, completer, priority));
-
+    // Start processing if not already
     if (!_isProcessing) {
+      log('Starting queue processing.');
       _processQueue();
     }
+
+    return completer.future;
   }
 
-  Future<void> _processQueue() async {
+  /// Processes the request queue based on the rate limit.
+  void _processQueue() {
     _isProcessing = true;
-    _timer = Timer.periodic(Duration(seconds: 1), (timer) async {
-      int processedRequests = 0;
+    final interval = Duration(milliseconds: 1000 ~/ _rateLimit);
+    log('Processing queue with interval: ${interval.inMilliseconds}ms');
 
-      while (_queue.isNotEmpty && processedRequests < _dynamicRateLimit) {
-        final request = _queue.removeFirst();
-        try {
-          final result = await request.call();
-          request.completer.complete(result);
-        } catch (e) {
-          if (request.retryCount < request.maxRetries) {
-            request.retryCount++;
-            final delay = Duration(milliseconds: 500 * (1 << request.retryCount));
-            await Future.delayed(delay);
-            _queue.add(request);
-          } else {
-            request.completer.completeError(e);
-          }
-        }
-        processedRequests++;
+    _timer = Timer.periodic(interval, (timer) async {
+      if (_queue.isEmpty) {
+        log('Queue is empty. Stopping processing.');
+        _stopProcessing();
+        return;
       }
 
-      if (_queue.isEmpty) {
-        _isProcessing = false;
-        _timer?.cancel();
+      final currentRequest = _queue.removeFirst();
+      log('Processing request. Remaining queue: ${_queue.length}');
+      try {
+        final result = await currentRequest.call();
+        currentRequest.completer.complete(result);
+        log('Request completed successfully.');
+      } catch (e) {
+        log('Request failed with error: $e');
+        if (currentRequest.retryCount < currentRequest.maxRetries) {
+          currentRequest.retryCount++;
+          final delay = Duration(milliseconds: 500 * (1 << currentRequest.retryCount));
+          log('Retrying request in ${delay.inMilliseconds}ms. Retry count: ${currentRequest.retryCount}');
+          Timer(delay, () {
+            _queue.add(currentRequest); // Requeue with exponential backoff
+            log('Request requeued. New queue length: ${_queue.length}');
+          });
+        } else {
+          log('Max retries reached. Completing with error.');
+          currentRequest.completer.completeError(e);
+        }
       }
     });
   }
+
+  /// Stops the queue processing.
+  void _stopProcessing() {
+    _isProcessing = false;
+    _timer?.cancel();
+    _timer = null;
+    log('Queue processing stopped.');
+  }
+
+  /// Disposes the RequestQueue by stopping processing and clearing the queue.
+  void dispose() {
+    _stopProcessing();
+    _queue.clear();
+    log('RequestQueue disposed.');
+  }
 }
 
+/// Represents a single request in the [RequestQueue].
 class _Request {
   final Future<dynamic> Function() call;
-  final Completer completer;
-  final int priority;
+  final Completer<dynamic> completer;
   int retryCount = 0;
-  final int maxRetries = 3;
+  final int maxRetries;
 
-  _Request(this.call, this.completer, this.priority);
+  _Request(this.call, this.completer, {this.maxRetries = 3});
 }

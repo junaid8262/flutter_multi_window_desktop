@@ -1,87 +1,93 @@
+// desktop_multi_window.dart
+
 import 'dart:async';
 import 'package:flutter/services.dart';
+
 import 'src/channels.dart';
 import 'src/window_controller.dart';
 import 'src/window_controller_impl.dart';
 import 'src/request_queue.dart';
+
 export 'src/window_controller.dart';
 
 class DesktopMultiWindow {
-  static final RequestQueue _requestQueue = RequestQueue();
-  static final Set<int> _activeWindows = {}; // Track active window IDs
+  // Registry to keep track of all window controllers
+  static final Map<int, WindowController> _windowControllers = {};
+
+  // Global RequestQueue for non-window-specific method channel invocations
+  static final RequestQueue _globalRequestQueue = RequestQueue(rateLimit: 10); // Adjust as needed
 
   /// Create a new Window.
-  /// The new window instance will call `main` method in your `main.dart` file in
-  /// a new flutter engine instance with some additional arguments.
-  /// You can use [WindowController] to control the window.
   static Future<WindowController> createWindow([String? arguments]) async {
-    final request = () => multiWindowChannel.invokeMethod<int>(
-      'createWindow',
-      arguments,
-    );
-
-    // Add the request to the queue with high priority
-    final completer = Completer<WindowController>();
-    _requestQueue.addRequest(() async {
-      final windowId = await request();
+    try {
+      final windowId = await _globalRequestQueue.addRequest(() => multiWindowChannel.invokeMethod<int>(
+        'createWindow',
+        arguments,
+      ));
       if (windowId == null || windowId <= 0) {
-        throw Exception('Failed to create a valid window');
+        throw Exception('Invalid window ID: $windowId');
       }
-      completer.complete(WindowControllerMainImpl(windowId));
-    }, priority: 0);
-
-    return completer.future;
-  }
-
-  /// Invoke a method on the isolate of the window.
-  /// [targetWindowId] specifies the window to invoke the method on.
-  static Future<dynamic> invokeMethod(int targetWindowId, String method,
-      [dynamic arguments]) async {
-    final request = () => windowEventChannel.invokeMethod(
-      method,
-      <String, dynamic>{
-        'targetWindowId': targetWindowId,
-        'arguments': arguments,
-      },
-    );
-
-    // Assign priority based on method type
-    final priority = (method == 'close' || method == 'show') ? 0 : 1;
-    final completer = Completer();
-
-    _requestQueue.addRequest(() async {
-      try {
-        final result = await request();
-        completer.complete(result);
-      } catch (e) {
-        completer.completeError(e);
-      }
-    }, priority: priority);
-
-    return completer.future;
-  }
-
-  /// Add a method handler to the isolate of the window.
-  static void setMethodHandler(
-      Future<dynamic> Function(MethodCall call, int fromWindowId)? handler) {
-    if (handler == null) {
-      windowEventChannel.setMethodCallHandler(null);
-      return;
+      final controller = WindowController.fromWindowId(windowId);
+      _windowControllers[windowId] = controller;
+      return controller;
+    } catch (e) {
+      // Handle or log the error appropriately
+      rethrow;
     }
+  }
+
+  /// Invoke a method on the isolate of the specified window.
+  static Future<dynamic> invokeMethod(
+      int targetWindowId,
+      String method, [
+        dynamic arguments,
+      ]) async {
+    final controller = _windowControllers[targetWindowId];
+    if (controller == null) {
+      throw Exception('No window found with ID: $targetWindowId');
+    }
+    return controller.invokeMethod(method, arguments);
+  }
+
+  /// Set a method handler for incoming method calls on the window's isolate.
+  ///
+  /// **Note**: This handler is specific to this window's isolate.
+  /// You cannot handle method calls targeting other windows in this handler.
+  static void setMethodHandler(
+      Future<dynamic> Function(MethodCall call, int fromWindowId)? handler,
+      ) {
     windowEventChannel.setMethodCallHandler((call) async {
-      final fromWindowId = call.arguments['fromWindowId'] as int;
+      if (handler == null) return null;
+      final fromWindowId = call.arguments['fromWindowId'] as int? ?? -1;
       final arguments = call.arguments['arguments'];
       return await handler(MethodCall(call.method, arguments), fromWindowId);
     });
   }
 
-  /// Get all sub window id.
+  /// Retrieve all sub-window IDs.
+  ///
+  /// Excludes the main window (ID 0).
   static Future<List<int>> getAllSubWindowIds() async {
-    final result = await multiWindowChannel
-        .invokeMethod<List<dynamic>>('getAllSubWindowIds');
-    final ids = result?.cast<int>() ?? const [];
-    assert(!ids.contains(0), 'ids must not contains main window id');
-    assert(ids.every((id) => id > 0), 'id must be greater than 0');
-    return ids;
+    try {
+      final result = await _globalRequestQueue.addRequest(() => multiWindowChannel.invokeMethod<List<dynamic>>(
+        'getAllSubWindowIds',
+      ));
+      final ids = result?.cast<int>() ?? [];
+      if (ids.contains(0)) {
+        throw Exception('IDs must not contain the main window ID (0).');
+      }
+      if (!ids.every((id) => id > 0)) {
+        throw Exception('All window IDs must be greater than 0.');
+      }
+      return ids;
+    } catch (e) {
+      // Handle or log the error appropriately
+      rethrow;
+    }
+  }
+
+  /// Internal method to remove window controller from the registry
+  static void removeWindowController(int windowId) {
+    _windowControllers.remove(windowId);
   }
 }

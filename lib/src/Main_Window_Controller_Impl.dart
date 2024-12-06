@@ -1,4 +1,4 @@
-// src/window_controller_impl.dart
+// src/main_window_controller.dart
 
 import 'dart:io';
 import 'dart:ui';
@@ -9,22 +9,22 @@ import 'channels.dart';
 import 'window_controller.dart';
 import 'request_queue.dart';
 
-/// Implementation of [WindowController] for sub-windows.
-class WindowControllerMainImpl extends WindowController {
+/// Controller for the main application window.
+class MainWindowController extends WindowController {
   static final MethodChannel _channel = multiWindowChannel;
+  final RequestQueue _requestQueue = RequestQueue(rateLimit: 5);
 
-  // The ID of this window
-  final int _id;
+  // Singleton instance
+  static final MainWindowController _instance = MainWindowController._internal();
 
-  // Each window has its own RequestQueue
-  final RequestQueue _requestQueue;
+  // Private constructor
+  MainWindowController._internal();
 
-  // Constructor
-  WindowControllerMainImpl(this._id)
-      : _requestQueue = RequestQueue(rateLimit: 5); // Adjust as needed
+  // Public factory constructor returning the singleton instance
+  factory MainWindowController() => _instance;
 
   @override
-  int get windowId => _id;
+  int get windowId => 0;
 
   /// Handles method channel invocations with queueing.
   @override
@@ -34,23 +34,13 @@ class WindowControllerMainImpl extends WindowController {
 
   @override
   Future<void> close() async {
-    if (_id == 0) {
-      throw UnsupportedError('Cannot close the main application window.');
-    }
-    try {
-      await invokeMethod('close', _id);
-      DesktopMultiWindow.removeWindowController(_id);
-      _requestQueue.dispose();
-    } catch (e) {
-      // Handle or log the error appropriately
-      rethrow;
-    }
+    throw UnsupportedError('Cannot close the main application window.');
   }
 
   @override
   Future<void> hide() async {
     try {
-      await invokeMethod('hide', _id);
+      await invokeMethod('hide', windowId);
     } catch (e) {
       rethrow;
     }
@@ -59,7 +49,7 @@ class WindowControllerMainImpl extends WindowController {
   @override
   Future<void> show() async {
     try {
-      await invokeMethod('show', _id);
+      await invokeMethod('show', windowId);
     } catch (e) {
       rethrow;
     }
@@ -68,7 +58,7 @@ class WindowControllerMainImpl extends WindowController {
   @override
   Future<void> center() async {
     try {
-      await invokeMethod('center', _id);
+      await invokeMethod('center', windowId);
     } catch (e) {
       rethrow;
     }
@@ -78,7 +68,7 @@ class WindowControllerMainImpl extends WindowController {
   Future<void> setFrame(Rect frame) async {
     try {
       await invokeMethod('setFrame', <String, dynamic>{
-        'windowId': _id,
+        'windowId': windowId,
         'left': frame.left,
         'top': frame.top,
         'width': frame.width,
@@ -93,7 +83,7 @@ class WindowControllerMainImpl extends WindowController {
   Future<void> setTitle(String title) async {
     try {
       await invokeMethod('setTitle', <String, dynamic>{
-        'windowId': _id,
+        'windowId': windowId,
         'title': title,
       });
     } catch (e) {
@@ -110,7 +100,7 @@ class WindowControllerMainImpl extends WindowController {
     }
     try {
       await invokeMethod('resizable', <String, dynamic>{
-        'windowId': _id,
+        'windowId': windowId,
         'resizable': resizable,
       });
     } catch (e) {
@@ -122,7 +112,7 @@ class WindowControllerMainImpl extends WindowController {
   Future<void> setFrameAutosaveName(String name) async {
     try {
       await invokeMethod('setFrameAutosaveName', <String, dynamic>{
-        'windowId': _id,
+        'windowId': windowId,
         'name': name,
       });
     } catch (e) {

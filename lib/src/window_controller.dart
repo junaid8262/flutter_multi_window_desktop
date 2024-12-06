@@ -1,21 +1,28 @@
-import 'dart:ui';
+// src/window_controller.dart
 
+import 'dart:ui';
+import 'Main_Window_Controller_Impl.dart';
 import 'window_controller_impl.dart';
 
-/// The [WindowController] instance that is used to control this window.
+/// The [WindowController] instance used to control a window.
 abstract class WindowController {
   WindowController();
 
+  /// Factory constructor to create a [WindowController] from a window ID.
   factory WindowController.fromWindowId(int id) {
+    if (id == 0) {
+      return MainWindowController();
+    }
     return WindowControllerMainImpl(id);
   }
 
+  /// Factory constructor to create a [WindowController] for the main window.
   factory WindowController.main() {
-    return WindowControllerMainImpl(0);
+    return MainWindowController();
   }
 
-  /// The id of the window.
-  /// 0 means the main window.
+  /// The ID of the window.
+  /// - `0` indicates the main window.
   int get windowId;
 
   /// Close the window.
@@ -27,7 +34,7 @@ abstract class WindowController {
   /// Hide the window.
   Future<void> hide();
 
-  /// Set the window frame rect.
+  /// Set the window's frame rectangle.
   Future<void> setFrame(Rect frame);
 
   /// Center the window on the screen.
@@ -36,13 +43,19 @@ abstract class WindowController {
   /// Set the window's title.
   Future<void> setTitle(String title);
 
-  /// Whether the window can be resized. Available only on macOS.
+  /// Set whether the window is resizable. Only available on macOS.
   ///
-  /// Most useful for ensuring windows *cannot* be resized. Windows are
-  /// resizable by default, so there is no need to explicitly define a window
-  /// as resizable by calling this function.
+  /// Most useful for ensuring windows cannot be resized. Windows are
+  /// resizable by default, so there's no need to explicitly define a window
+  /// as resizable unless you want to restrict it.
   Future<void> resizable(bool resizable);
 
-  /// Available only on macOS.
+  /// Set the frame autosave name. Available only on macOS.
   Future<void> setFrameAutosaveName(String name);
+
+  /// Abstract method to invoke a method via the method channel.
+  ///
+  /// This method should be implemented by all subclasses to handle
+  /// method channel invocations with appropriate request queueing.
+  Future<dynamic> invokeMethod(String method, [dynamic arguments]);
 }
