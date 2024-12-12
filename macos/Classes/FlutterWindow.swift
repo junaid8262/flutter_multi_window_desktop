@@ -84,12 +84,15 @@ class FlutterWindow: BaseFlutterWindow {
 
     window.delegate = self
     window.isReleasedWhenClosed = false
-    window.titleVisibility = .hidden
-    window.titlebarAppearsTransparent = true
+    // Remove or modify these lines
+    // window.titleVisibility = .hidden
+    // window.titlebarAppearsTransparent = true
+
+    // Ensure the title is visible
+    window.titleVisibility = .visible
   }
 
-  deinit {
-    debugPrint("release window resource")
+  deinit {    debugPrint("release window resource")
     window.delegate = nil
     if let flutterViewController = window.contentViewController as? FlutterViewController {
       flutterViewController.engine.shutDownEngine()
